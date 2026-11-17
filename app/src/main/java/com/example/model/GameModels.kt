@@ -54,6 +54,7 @@ data class PlayerInfo(
 
 enum class GameMode {
     PRACTICE_AI,
+    ON_BOARD_LOCAL,
     HOST_MULTIPLAYER,
     CLIENT_MULTIPLAYER,
 }

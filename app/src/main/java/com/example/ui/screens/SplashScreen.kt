@@ -147,16 +147,34 @@ fun SplashScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "Dot N Box Challenge",
+                    text = "DOT N BOX CHALLENGE",
                     style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold),
                     color = TextPrimary,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Offline Hotspot Multiplayer",
+                    text = "Offline Hotspot & Local Multiplayer",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 28.dp, start = 24.dp, end = 24.dp),
+            ) {
+                Text(
+                    text = "Created By Raihan Kabir",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.Medium,
+                    ),
+                    color = AccentCyan.copy(alpha = 0.85f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag("splash_creator_credit"),
                 )
             }
         }

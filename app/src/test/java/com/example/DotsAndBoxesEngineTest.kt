@@ -296,4 +296,75 @@ class DotsAndBoxesEngineTest {
         assertEquals(0, state.players[0].score)
         assertEquals(1, state.players[1].score)
     }
+
+    @Test
+    fun `ten player colors are all distinct`() {
+        val colors = (0 until 10).map { com.example.model.PlayerColor.fromIndex(it) }
+        assertEquals(10, colors.map { it.index }.toSet().size)
+        assertEquals(10, colors.map { it.label }.toSet().size)
+        assertEquals(10, colors.map { it.primary }.toSet().size)
+    }
+
+    @Test
+    fun `all player counts from 2 to 10 complete full matches and sum to total boxes`() {
+        val defaultLetters = listOf("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
+        for (count in 2..10) {
+            val players = (0 until count).map { idx ->
+                PlayerInfo(
+                    id = "onboard_${idx + 1}",
+                    name = "${defaultLetters[idx]} Player",
+                    colorIndex = idx,
+                    isHost = idx == 0,
+                )
+            }
+            var state = DotsAndBoxesEngine.createInitialState(BoardSize.SMALL, players)
+            assertEquals(count, state.players.size)
+
+            // Verify sequential turn rotation across all `count` players using non-claiming edge moves first
+            var safety = 0
+            while (!state.isGameOver && safety < 200) {
+                val active = state.currentPlayer!!
+                val move = SimpleAiPlayer.chooseMove(state)!!
+                val res = DotsAndBoxesEngine.applyMove(state, active.id, move)
+                assertTrue("Move should succeed for count=$count", res is MoveResult.Success)
+                val success = res as MoveResult.Success
+                if (success.claimedCount > 0 && !success.gameFinished) {
+                    assertTrue("Claiming box must grant bonus turn for count=$count", success.grantedBonusTurn)
+                    assertEquals(active.id, success.newState.currentPlayer?.id)
+                }
+                state = success.newState
+                safety++
+            }
+
+            assertEquals("Match must finish for count=$count", GamePhase.FINISHED, state.phase)
+            assertEquals("No boxes remaining for count=$count", 0, state.remainingBoxesCount)
+            assertEquals(
+                "Total scores must equal board boxes for count=$count",
+                BoardSize.SMALL.totalBoxes,
+                state.players.sumOf { it.score },
+            )
+            assertEquals(count, state.rankedPlayers.size)
+            assertTrue(state.winners.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `tied scores across multiple players produce multiple winners`() {
+        // 3x3 dots = 4 boxes. 4 players can tie at 1 box each, or 2 players tie at 2 each.
+        val players = (0 until 4).map { idx ->
+            PlayerInfo(id = "p$idx", name = "Player $idx", colorIndex = idx)
+        }
+        val state = DotsAndBoxesEngine.createInitialState(BoardSize.TINY, players).copy(
+            players = listOf(
+                players[0].copy(score = 2),
+                players[1].copy(score = 2),
+                players[2].copy(score = 0),
+                players[3].copy(score = 0),
+            ),
+            phase = GamePhase.FINISHED,
+        )
+        assertEquals(2, state.winners.size)
+        assertEquals(listOf("p0", "p1"), state.winners.map { it.id })
+        assertEquals(listOf(2, 2, 0, 0), state.rankedPlayers.map { it.score })
+    }
 }

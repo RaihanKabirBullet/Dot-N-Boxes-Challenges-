@@ -30,7 +30,6 @@ import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.AlertDialog
@@ -232,14 +231,14 @@ fun HomeScreen(
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = Icons.Rounded.SmartToy,
+                                        imageVector = Icons.Rounded.PlayArrow,
                                         contentDescription = null,
                                         tint = NavyVoid.copy(alpha = 0.85f),
                                         modifier = Modifier.size(15.dp),
                                     )
                                     Spacer(modifier = Modifier.width(5.dp))
                                     Text(
-                                        text = "Practice vs AI • Offline",
+                                        text = "With AI & On-Board (2–10P)",
                                         style = MaterialTheme.typography.titleMedium,
                                         color = NavyVoid.copy(alpha = 0.88f),
                                         maxLines = 1,

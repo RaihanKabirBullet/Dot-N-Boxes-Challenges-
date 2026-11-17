@@ -72,6 +72,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _practiceGameState = MutableStateFlow<GameState?>(null)
     val practiceGameState: StateFlow<GameState?> = _practiceGameState.asStateFlow()
 
+    private val _onBoardPlayerCount = MutableStateFlow(2)
+    val onBoardPlayerCount: StateFlow<Int> = _onBoardPlayerCount.asStateFlow()
+
+    private val _onBoardBoardSize = MutableStateFlow(BoardSize.SMALL)
+    val onBoardBoardSize: StateFlow<BoardSize> = _onBoardBoardSize.asStateFlow()
+
+    private val _onBoardPlayerNames = MutableStateFlow(List(10) { "" })
+    val onBoardPlayerNames: StateFlow<List<String>> = _onBoardPlayerNames.asStateFlow()
+
+    private val _onBoardGameState = MutableStateFlow<GameState?>(null)
+    val onBoardGameState: StateFlow<GameState?> = _onBoardGameState.asStateFlow()
+
     private val _localPlayerId = MutableStateFlow("")
     val localPlayerId: StateFlow<String> = _localPlayerId.asStateFlow()
 
@@ -228,6 +240,52 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun defaultOnBoardPlayerName(index: Int): String {
+        val letters = listOf("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
+        val letter = letters.getOrElse(index) { (index + 1).toString() }
+        return "$letter Player"
+    }
+
+    fun setOnBoardPlayerCount(count: Int) {
+        _onBoardPlayerCount.value = count.coerceIn(2, 10)
+    }
+
+    fun setOnBoardBoardSize(size: BoardSize) {
+        _onBoardBoardSize.value = size
+    }
+
+    fun setOnBoardPlayerName(index: Int, name: String) {
+        if (index !in 0 until 10) return
+        val sanitized = name.take(18)
+        _onBoardPlayerNames.value = _onBoardPlayerNames.value.mapIndexed { idx, existing ->
+            if (idx == index) sanitized else existing
+        }
+    }
+
+    fun startOnBoardMatch() {
+        aiTurnJob?.cancel()
+        val count = _onBoardPlayerCount.value.coerceIn(2, 10)
+        val names = _onBoardPlayerNames.value
+        val players = (0 until count).map { idx ->
+            val raw = names.getOrNull(idx).orEmpty().trim()
+            val resolvedName = raw.ifEmpty { defaultOnBoardPlayerName(idx) }
+            PlayerInfo(
+                id = "onboard_${idx + 1}",
+                name = resolvedName,
+                colorIndex = idx,
+                isHost = idx == 0,
+                isAi = false,
+                isConnected = true,
+                score = 0,
+            )
+        }
+        val initial = DotsAndBoxesEngine.createInitialState(_onBoardBoardSize.value, players)
+        _activeMode.value = GameMode.ON_BOARD_LOCAL
+        lastObservedFinishedSeq = -1L
+        _onBoardGameState.value = initial
+        _navEvents.tryEmit(UiNavEvent.NavigateToGame)
+    }
+
     fun startHostingRoom(initialBoardSize: BoardSize = BoardSize.SMALL) {
         viewModelScope.launch {
             val pid = _localPlayerId.value.ifBlank { settingsRepository.ensureLocalPlayerId() }
@@ -322,6 +380,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 val result = DotsAndBoxesEngine.applyMove(gs, pid, line)
                 handlePracticeMoveResult(result)
             }
+            GameMode.ON_BOARD_LOCAL -> {
+                val gs = _onBoardGameState.value ?: return
+                val activeId = gs.currentPlayer?.id ?: return
+                val result = DotsAndBoxesEngine.applyMove(gs, activeId, line)
+                handleOnBoardMoveResult(result)
+            }
             GameMode.HOST_MULTIPLAYER -> {
                 viewModelScope.launch {
                     val result = hostServer.submitHostMove(pid, line)
@@ -350,6 +414,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
                 clientSession.sendMove(pid, line)
+            }
+        }
+    }
+
+    private fun handleOnBoardMoveResult(result: MoveResult) {
+        when (result) {
+            is MoveResult.Invalid -> {
+                feedbackManager.onError()
+                _navEvents.tryEmit(UiNavEvent.ShowMessage(result.reason))
+            }
+            is MoveResult.Success -> {
+                _onBoardGameState.value = result.newState
+                when {
+                    result.gameFinished -> feedbackManager.onVictory()
+                    result.grantedBonusTurn -> feedbackManager.onBoxClaimed(isBonus = true)
+                    result.claimedCount > 0 -> feedbackManager.onBoxClaimed(isBonus = false)
+                    else -> feedbackManager.onLineDrawn()
+                }
+                if (result.gameFinished) {
+                    viewModelScope.launch {
+                        delay(700L)
+                        _navEvents.tryEmit(UiNavEvent.NavigateToResults)
+                    }
+                }
             }
         }
     }
@@ -408,6 +496,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     _practiceGameState.value = gs.copy(phase = GamePhase.PAUSED)
                 }
             }
+            GameMode.ON_BOARD_LOCAL -> {
+                val gs = _onBoardGameState.value ?: return
+                if (gs.phase == GamePhase.IN_PROGRESS) {
+                    _onBoardGameState.value = gs.copy(phase = GamePhase.PAUSED)
+                }
+            }
             GameMode.HOST_MULTIPLAYER -> {
                 viewModelScope.launch { hostServer.setPaused(true) }
             }
@@ -425,6 +519,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     maybeScheduleAiTurn(resumed)
                 }
             }
+            GameMode.ON_BOARD_LOCAL -> {
+                val gs = _onBoardGameState.value ?: return
+                if (gs.phase == GamePhase.PAUSED) {
+                    _onBoardGameState.value = gs.copy(phase = GamePhase.IN_PROGRESS)
+                }
+            }
             GameMode.HOST_MULTIPLAYER -> {
                 viewModelScope.launch { hostServer.setPaused(false) }
             }
@@ -435,6 +535,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun restartCurrentMatch() {
         when (_activeMode.value) {
             GameMode.PRACTICE_AI -> startPracticeMatch()
+            GameMode.ON_BOARD_LOCAL -> startOnBoardMatch()
             GameMode.HOST_MULTIPLAYER -> {
                 viewModelScope.launch {
                     lastObservedFinishedSeq = -1L
@@ -467,12 +568,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 _navEvents.tryEmit(UiNavEvent.NavigateToLobby)
             }
             GameMode.PRACTICE_AI -> startPracticeMatch()
+            GameMode.ON_BOARD_LOCAL -> startOnBoardMatch()
         }
     }
 
     fun leaveRoomAndReset() {
         aiTurnJob?.cancel()
         _practiceGameState.value = null
+        _onBoardGameState.value = null
         viewModelScope.launch {
             hostServer.stopServer()
             clientSession.disconnect()
@@ -482,6 +585,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun currentActiveGameState(): GameState? {
         return when (_activeMode.value) {
             GameMode.PRACTICE_AI -> _practiceGameState.value
+            GameMode.ON_BOARD_LOCAL -> _onBoardGameState.value
             GameMode.HOST_MULTIPLAYER -> hostSnapshot.value.gameState
             GameMode.CLIENT_MULTIPLAYER -> clientSnapshot.value.gameState
         }

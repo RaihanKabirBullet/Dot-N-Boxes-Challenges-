@@ -39,7 +39,9 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.HowToPlayScreen
 import com.example.ui.screens.JoinRoomScreen
 import com.example.ui.screens.LobbyScreen
+import com.example.ui.screens.OnBoardSetupScreen
 import com.example.ui.screens.PauseScreen
+import com.example.ui.screens.PlayMenuScreen
 import com.example.ui.screens.ResultsScreen
 import com.example.ui.screens.SplashScreen
 import com.example.ui.theme.AccentCyan
@@ -78,6 +80,10 @@ fun DotsAndBoxesApp(
     val practiceBoardSize by viewModel.practiceBoardSize.collectAsStateWithLifecycle()
     val practiceAiCount by viewModel.practiceAiCount.collectAsStateWithLifecycle()
     val practiceGameState by viewModel.practiceGameState.collectAsStateWithLifecycle()
+    val onBoardPlayerCount by viewModel.onBoardPlayerCount.collectAsStateWithLifecycle()
+    val onBoardBoardSize by viewModel.onBoardBoardSize.collectAsStateWithLifecycle()
+    val onBoardPlayerNames by viewModel.onBoardPlayerNames.collectAsStateWithLifecycle()
+    val onBoardGameState by viewModel.onBoardGameState.collectAsStateWithLifecycle()
     val localPlayerId by viewModel.localPlayerId.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
@@ -153,8 +159,30 @@ fun DotsAndBoxesApp(
                         onToggleVibration = viewModel::toggleVibration,
                         onCreateRoom = { navController.navigate(NavRoutes.CREATE_ROOM) },
                         onJoinRoom = { navController.navigate(NavRoutes.JOIN_ROOM) },
-                        onPracticeAi = { navController.navigate(NavRoutes.boardSelection("practice")) },
+                        onPracticeAi = { navController.navigate(NavRoutes.PLAY_MENU) },
                         onHowToPlay = { navController.navigate(NavRoutes.HOW_TO_PLAY) },
+                    )
+                }
+
+                composable(NavRoutes.PLAY_MENU) {
+                    PlayMenuScreen(
+                        onWithAi = { navController.navigate(NavRoutes.boardSelection("practice")) },
+                        onOnBoardMultiplayer = { navController.navigate(NavRoutes.ON_BOARD_SETUP) },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(NavRoutes.ON_BOARD_SETUP) {
+                    OnBoardSetupScreen(
+                        playerCount = onBoardPlayerCount,
+                        selectedBoardSize = onBoardBoardSize,
+                        playerNames = onBoardPlayerNames,
+                        defaultNameProvider = viewModel::defaultOnBoardPlayerName,
+                        onPlayerCountChange = viewModel::setOnBoardPlayerCount,
+                        onBoardSizeChange = viewModel::setOnBoardBoardSize,
+                        onPlayerNameChange = viewModel::setOnBoardPlayerName,
+                        onStartGame = viewModel::startOnBoardMatch,
+                        onBack = { navController.popBackStack() },
                     )
                 }
 
@@ -248,6 +276,7 @@ fun DotsAndBoxesApp(
                 composable(NavRoutes.GAME) {
                     val currentGame = when (activeMode) {
                         GameMode.PRACTICE_AI -> practiceGameState
+                        GameMode.ON_BOARD_LOCAL -> onBoardGameState
                         GameMode.HOST_MULTIPLAYER -> hostSnapshot.gameState
                         GameMode.CLIENT_MULTIPLAYER -> clientSnapshot.gameState
                     }
@@ -296,6 +325,7 @@ fun DotsAndBoxesApp(
                 composable(NavRoutes.RESULTS) {
                     val currentGame = when (activeMode) {
                         GameMode.PRACTICE_AI -> practiceGameState
+                        GameMode.ON_BOARD_LOCAL -> onBoardGameState
                         GameMode.HOST_MULTIPLAYER -> hostSnapshot.gameState
                         GameMode.CLIENT_MULTIPLAYER -> clientSnapshot.gameState
                     }

@@ -136,9 +136,13 @@ fun ResultsScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    var currentRank = 1
                     ranked.forEachIndexed { idx, player ->
+                        if (idx > 0 && player.score < ranked[idx - 1].score) {
+                            currentRank = idx + 1
+                        }
                         val isWinner = winners.any { it.id == player.id }
-                        val isMe = player.id == localPlayerId
+                        val isMe = mode != GameMode.ON_BOARD_LOCAL && player.id == localPlayerId
                         GlassNavyCard(
                             borderColor = if (isWinner) player.color.primary else NavyOutline,
                             backgroundColor = if (isWinner) NavyCardElevated else com.example.ui.theme.NavyCard,
@@ -153,13 +157,13 @@ fun ResultsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
-                                    text = "#${idx + 1}",
+                                    text = "#$currentRank",
                                     style = MaterialTheme.typography.titleLarge.copy(
                                         fontFamily = JetBrainsMonoFontFamily,
                                         fontWeight = FontWeight.Bold,
                                     ),
                                     color = if (isWinner) player.color.primary else TextSecondary,
-                                    modifier = Modifier.width(34.dp),
+                                    modifier = Modifier.width(38.dp),
                                 )
                                 PlayerColorBadge(
                                     color = player.color,
@@ -211,7 +215,7 @@ fun ResultsScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                if (mode == GameMode.PRACTICE_AI || mode == GameMode.HOST_MULTIPLAYER) {
+                if (mode == GameMode.PRACTICE_AI || mode == GameMode.ON_BOARD_LOCAL || mode == GameMode.HOST_MULTIPLAYER) {
                     GradientActionButton(
                         text = "Play Again",
                         icon = Icons.Rounded.Refresh,
@@ -221,7 +225,7 @@ fun ResultsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                if (mode != GameMode.PRACTICE_AI) {
+                if (mode == GameMode.HOST_MULTIPLAYER || mode == GameMode.CLIENT_MULTIPLAYER) {
                     SecondaryNavyButton(
                         text = "Return to Lobby",
                         accentColor = AccentCyan,

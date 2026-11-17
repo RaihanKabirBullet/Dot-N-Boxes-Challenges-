@@ -3,6 +3,8 @@ package com.example.ui.navigation
 object NavRoutes {
     const val SPLASH = "splash"
     const val HOME = "home"
+    const val PLAY_MENU = "play_menu"
+    const val ON_BOARD_SETUP = "on_board_setup"
     const val CREATE_ROOM = "create_room"
     const val JOIN_ROOM = "join_room"
     const val LOBBY = "lobby"

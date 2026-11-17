@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,7 +106,14 @@ fun GameScreen(
             }
 
             val currentPlayer = gameState.currentPlayer
-            val isMyTurn = currentPlayer?.id == localPlayerId && gameState.phase == GamePhase.IN_PROGRESS
+            val isOnBoardLocal = mode == GameMode.ON_BOARD_LOCAL
+            val isMyTurn = gameState.phase == GamePhase.IN_PROGRESS &&
+                (isOnBoardLocal || currentPlayer?.id == localPlayerId)
+            val effectiveLocalPlayerId = if (isOnBoardLocal) {
+                currentPlayer?.id ?: ""
+            } else {
+                localPlayerId
+            }
             val isClientDisconnected = mode == GameMode.CLIENT_MULTIPLAYER &&
                 (clientStatus == ClientConnectionStatus.DISCONNECTED || clientStatus == ClientConnectionStatus.ERROR)
 
@@ -203,20 +215,46 @@ fun GameScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Scoreboard Strip (2-4 players)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    gameState.players.forEachIndexed { index, player ->
-                        val isTurn = index == gameState.currentTurnIndex && gameState.phase == GamePhase.IN_PROGRESS
-                        val isMe = player.id == localPlayerId
-                        PlayerScorePill(
-                            player = player,
-                            isActiveTurn = isTurn,
-                            isMe = isMe,
-                            modifier = Modifier.weight(1f),
-                        )
+                // Scoreboard Strip (2-4 fixed row, 5-10 auto-scrolling row)
+                if (gameState.players.size <= 4) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        gameState.players.forEachIndexed { index, player ->
+                            val isTurn = index == gameState.currentTurnIndex && gameState.phase == GamePhase.IN_PROGRESS
+                            val isMe = !isOnBoardLocal && player.id == localPlayerId
+                            PlayerScorePill(
+                                player = player,
+                                isActiveTurn = isTurn,
+                                isMe = isMe,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                } else {
+                    val scoreboardListState = rememberLazyListState()
+                    LaunchedEffect(gameState.currentTurnIndex) {
+                        if (gameState.currentTurnIndex in gameState.players.indices) {
+                            scoreboardListState.animateScrollToItem(gameState.currentTurnIndex)
+                        }
+                    }
+                    LazyRow(
+                        state = scoreboardListState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("game_scoreboard_lazy_row"),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        itemsIndexed(gameState.players, key = { _, p -> p.id }) { index, player ->
+                            val isTurn = index == gameState.currentTurnIndex && gameState.phase == GamePhase.IN_PROGRESS
+                            PlayerScorePill(
+                                player = player,
+                                isActiveTurn = isTurn,
+                                isMe = false,
+                                modifier = Modifier.widthIn(min = 96.dp, max = 132.dp),
+                            )
+                        }
                     }
                 }
 
@@ -274,7 +312,7 @@ fun GameScreen(
                 // Main Canvas Board
                 DotsAndBoxesBoard(
                     gameState = gameState,
-                    localPlayerId = localPlayerId,
+                    localPlayerId = effectiveLocalPlayerId,
                     isMyTurn = isMyTurn && !isClientDisconnected,
                     onDotSelectedFeedback = onDotSelectedFeedback,
                     onInvalidTapFeedback = onInvalidTapFeedback,
@@ -327,9 +365,23 @@ fun GameScreen(
                             }
                         }
 
+                        if (currentPlayer != null && gameState.phase == GamePhase.IN_PROGRESS) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(currentPlayer.color.primary),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+
                         val bannerText = when {
                             gameState.phase == GamePhase.PAUSED -> "Match Paused"
                             gameState.phase == GamePhase.FINISHED -> "All boxes claimed! Calculating results..."
+                            isOnBoardLocal && gameState.bonusTurnAwarded && currentPlayer != null ->
+                                "${currentPlayer.name} (${currentPlayer.score}) • BONUS TURN!"
+                            isOnBoardLocal && currentPlayer != null ->
+                                "${currentPlayer.name}'s Turn (${currentPlayer.score} pts)"
                             gameState.bonusTurnAwarded && isMyTurn -> "BONUS TURN! Tap two adjacent dots"
                             gameState.bonusTurnAwarded -> "${currentPlayer?.name ?: "Player"} earned a BONUS TURN!"
                             isMyTurn -> "Your Turn — Tap two adjacent dots"
