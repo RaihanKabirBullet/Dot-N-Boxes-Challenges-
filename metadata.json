@@ -1,0 +1,6 @@
+{
+  "name": "Dot N Box Challenge",
+  "description": "Offline Wi-Fi hotspot multiplayer and AI practice Dot N Box Challenge game for Android.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
