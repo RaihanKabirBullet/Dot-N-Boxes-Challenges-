@@ -7,12 +7,15 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.UserSettings
 import com.example.game.DotsAndBoxesEngine
 import com.example.model.GameMode
 import com.example.model.LineId
 import com.example.model.LineType
 import com.example.ui.GameViewModel
+import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.OnBoardSetupScreen
 import com.example.ui.screens.PlayMenuScreen
 import com.example.ui.screens.SplashScreen
@@ -53,25 +56,49 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `play menu displays both options and triggers callbacks`() {
+    fun `home screen opening interface displays creator credit`() {
+        composeRule.setContent {
+            DotsAndBoxesTheme {
+                HomeScreen(
+                    settings = UserSettings(),
+                    onUpdateNickname = {},
+                    onToggleSound = {},
+                    onToggleVibration = {},
+                    onCreateRoom = {},
+                    onJoinRoom = {},
+                    onPracticeAi = {},
+                    onHowToPlay = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("home_creator_credit").assertIsDisplayed()
+        composeRule.onNodeWithText("Created By Raihan Kabir").assertIsDisplayed()
+    }
+
+    @Test
+    fun `play menu displays 1 Play With AI and 2 On Board Multiplayer with 2 to 5 player options`() {
         var aiClicked = false
-        var onBoardClicked = false
+        val selectedCounts = mutableListOf<Int?>()
         composeRule.setContent {
             DotsAndBoxesTheme {
                 PlayMenuScreen(
                     onWithAi = { aiClicked = true },
-                    onOnBoardMultiplayer = { onBoardClicked = true },
+                    onOnBoardMultiplayer = { count -> selectedCounts.add(count) },
                     onBack = {},
                 )
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("WITH AI").assertIsDisplayed()
-        composeRule.onNodeWithText("ON BOARD MULTIPLAYER").assertIsDisplayed()
+        composeRule.onNodeWithText("1. Play With AI").assertIsDisplayed()
         composeRule.onNodeWithTag("play_menu_with_ai").performClick()
-        composeRule.onNodeWithTag("play_menu_on_board").performClick()
         assertTrue(aiClicked)
-        assertTrue(onBoardClicked)
+
+        composeRule.onNodeWithText("2. On Board Multiplayer").performScrollTo().assertIsDisplayed()
+        for (count in 2..5) {
+            composeRule.onNodeWithTag("play_menu_on_board_${count}p").performScrollTo().performClick()
+        }
+        assertEquals(listOf(2, 3, 4, 5), selectedCounts)
     }
 
     @Test
@@ -79,6 +106,7 @@ class ExampleRobolectricTest {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val vm = GameViewModel(app)
         assertEquals(2, vm.onBoardPlayerCount.value)
+        assertEquals(550L, GameViewModel.AI_TURN_DELAY_MS)
 
         var started = false
         composeRule.setContent {
@@ -103,7 +131,7 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `viewmodel on board setup supports 2 to 10 players with default and custom names`() {
+    fun `viewmodel on board setup supports 2 to 10 local human players with default and custom names`() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val vm = GameViewModel(app)
         val expectedDefaults = listOf(
@@ -137,9 +165,10 @@ class ExampleRobolectricTest {
                 }
                 assertEquals(expectedName, state.players[idx].name)
                 assertEquals(idx, state.players[idx].colorIndex)
+                assertTrue("On Board player must not be AI", !state.players[idx].isAi)
             }
 
-            // First player draws a non-scoring line; turn advances to player 2 (index 1)
+            // First local human player draws a non-scoring line; turn advances manually to player 2 (index 1)
             vm.submitLineMove(LineId(LineType.HORIZONTAL, 0, 0))
             val afterMove = vm.onBoardGameState.value!!
             assertEquals(1, afterMove.currentTurnIndex)

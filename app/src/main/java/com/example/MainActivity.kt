@@ -167,7 +167,12 @@ fun DotsAndBoxesApp(
                 composable(NavRoutes.PLAY_MENU) {
                     PlayMenuScreen(
                         onWithAi = { navController.navigate(NavRoutes.boardSelection("practice")) },
-                        onOnBoardMultiplayer = { navController.navigate(NavRoutes.ON_BOARD_SETUP) },
+                        onOnBoardMultiplayer = { selectedCount ->
+                            if (selectedCount != null) {
+                                viewModel.setOnBoardPlayerCount(selectedCount)
+                            }
+                            navController.navigate(NavRoutes.ON_BOARD_SETUP)
+                        },
                         onBack = { navController.popBackStack() },
                     )
                 }

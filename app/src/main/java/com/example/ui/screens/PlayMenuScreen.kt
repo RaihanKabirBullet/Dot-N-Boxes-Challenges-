@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,15 +47,17 @@ import com.example.ui.theme.AccentCoral
 import com.example.ui.theme.AccentCyan
 import com.example.ui.theme.AccentPurple
 import com.example.ui.theme.AccentYellow
+import com.example.ui.theme.NavyCard
 import com.example.ui.theme.NavyCardElevated
 import com.example.ui.theme.NavyVoid
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlayMenuScreen(
     onWithAi: () -> Unit,
-    onOnBoardMultiplayer: () -> Unit,
+    onOnBoardMultiplayer: (Int?) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -76,11 +80,11 @@ fun PlayMenuScreen(
                     modifier = Modifier
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     PlayModeOptionCard(
-                        title = "WITH AI",
+                        title = "1. Play With AI",
                         badge = "SOLO PRACTICE",
                         description = "Challenge smart AI bots across any grid size from 3×3 to 10×10.",
                         icon = Icons.Rounded.SmartToy,
@@ -91,14 +95,62 @@ fun PlayMenuScreen(
                     )
 
                     PlayModeOptionCard(
-                        title = "ON BOARD MULTIPLAYER",
-                        badge = "2–10 PLAYERS • SAME PHONE",
-                        description = "Pass-and-play locally on the same device. No Wi-Fi, hotspot, or network needed.",
+                        title = "2. On Board Multiplayer",
+                        badge = "LOCAL HUMAN PLAYERS",
+                        description = "No AI — local players step manually on the same phone in pass-and-play turns.",
                         icon = Icons.Rounded.Groups,
                         gradientColors = listOf(AccentCyan, AccentPurple),
                         accentColor = AccentCyan,
                         testTag = "play_menu_on_board",
-                        onClick = onOnBoardMultiplayer,
+                        onClick = { onOnBoardMultiplayer(null) },
+                        extraContent = {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                listOf(2, 3, 4, 5).forEach { count ->
+                                    Surface(
+                                        onClick = { onOnBoardMultiplayer(count) },
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = NavyCard,
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            AccentCyan.copy(alpha = 0.55f),
+                                        ),
+                                        modifier = Modifier.testTag("play_menu_on_board_${count}p"),
+                                    ) {
+                                        Text(
+                                            text = "➤ $count Player",
+                                            style = MaterialTheme.typography.labelLarge.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                            ),
+                                            color = AccentCyan,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    onClick = { onOnBoardMultiplayer(null) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = AccentPurple.copy(alpha = 0.16f),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        AccentPurple.copy(alpha = 0.5f),
+                                    ),
+                                    modifier = Modifier.testTag("play_menu_on_board_custom"),
+                                ) {
+                                    Text(
+                                        text = "6–10 Player",
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                        ),
+                                        color = AccentPurple,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    )
+                                }
+                            }
+                        },
                     )
 
                     Surface(
@@ -111,7 +163,7 @@ fun PlayMenuScreen(
                             text = "Tip: Want to play across separate phones? Go back to the Home Screen and use Offline Multiplayer (Host / Join).",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(14.dp),
                         )
                     }
                 }
@@ -130,8 +182,9 @@ private fun PlayModeOptionCard(
     accentColor: Color,
     testTag: String,
     onClick: () -> Unit,
+    extraContent: (@Composable () -> Unit)? = null,
 ) {
-    val shape = RoundedCornerShape(26.dp)
+    val shape = RoundedCornerShape(24.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -157,7 +210,7 @@ private fun PlayModeOptionCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(22.dp),
+                .padding(18.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -166,7 +219,7 @@ private fun PlayModeOptionCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .background(Brush.linearGradient(gradientColors)),
                     contentAlignment = Alignment.Center,
@@ -175,7 +228,7 @@ private fun PlayModeOptionCard(
                         imageVector = icon,
                         contentDescription = title,
                         tint = NavyVoid,
-                        modifier = Modifier.size(30.dp),
+                        modifier = Modifier.size(26.dp),
                     )
                 }
                 Surface(
@@ -191,7 +244,7 @@ private fun PlayModeOptionCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -218,6 +271,10 @@ private fun PlayModeOptionCard(
                     tint = accentColor,
                     modifier = Modifier.size(24.dp),
                 )
+            }
+
+            if (extraContent != null) {
+                extraContent()
             }
         }
     }

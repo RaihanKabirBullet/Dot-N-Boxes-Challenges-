@@ -142,7 +142,14 @@ fun HomeScreen(
                                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                                 color = TextPrimary,
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Created By Raihan Kabir",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                                color = AccentCyan.copy(alpha = 0.9f),
+                                modifier = Modifier.testTag("home_creator_credit"),
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
                             Surface(
                                 onClick = { showSettingsDialog = true },
                                 shape = RoundedCornerShape(10.dp),

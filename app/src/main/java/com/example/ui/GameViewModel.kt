@@ -475,7 +475,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         aiTurnJob?.cancel()
         aiTurnJob = viewModelScope.launch {
-            delay(440L)
+            delay(AI_TURN_DELAY_MS)
             val latest = _practiceGameState.value ?: return@launch
             if (latest.phase != GamePhase.IN_PROGRESS) return@launch
             val activePlayer = latest.currentPlayer ?: return@launch
@@ -596,5 +596,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         aiTurnJob?.cancel()
         hostServer.close()
         clientSession.close()
+    }
+
+    companion object {
+        const val AI_TURN_DELAY_MS = 550L
     }
 }
