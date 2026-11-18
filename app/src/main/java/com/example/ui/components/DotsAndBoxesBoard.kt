@@ -11,7 +11,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -77,8 +78,14 @@ fun DotsAndBoxesBoard(
     val boxDim = gameState.boardSize.boxesPerSide
     val activeColor = gameState.currentPlayer?.color?.primary ?: AccentCyan
 
-    var selectedDot by remember(gameState.boardSize, gameState.moveSequence) {
+    var dragStartDot by remember(gameState.boardSize, gameState.moveSequence) {
         mutableStateOf<DotCoord?>(null)
+    }
+    var dragTargetDot by remember(gameState.boardSize, gameState.moveSequence) {
+        mutableStateOf<DotCoord?>(null)
+    }
+    var dragCurrentOffset by remember(gameState.boardSize, gameState.moveSequence) {
+        mutableStateOf<Offset?>(null)
     }
 
     val latestState by rememberUpdatedState(gameState)
@@ -180,12 +187,14 @@ fun DotsAndBoxesBoard(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(10.dp)
+                    .testTag("game_board_canvas")
                     .pointerInput(dots) {
-                        detectTapGestures { tapOffset ->
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
                             val state = latestState
                             if (state.phase != GamePhase.IN_PROGRESS || !latestIsMyTurn) {
                                 onInvalidTapFeedback()
-                                return@detectTapGestures
+                                return@awaitEachGesture
                             }
 
                             val canvasMin = minOf(size.width.toFloat(), size.height.toFloat())
@@ -194,46 +203,117 @@ fun DotsAndBoxesBoard(
                             val step = gridSpan / (dots - 1).coerceAtLeast(1)
                             val originX = (size.width - gridSpan) / 2f
                             val originY = (size.height - gridSpan) / 2f
+                            val hitRadius = (step * 0.48f).coerceAtLeast(28f)
 
-                            val hitRadius = (step * 0.46f).coerceAtLeast(24f)
+                            fun dotCenter(d: DotCoord): Offset =
+                                Offset(originX + d.col * step, originY + d.row * step)
 
-                            var nearestDot: DotCoord? = null
+                            var startDot: DotCoord? = null
                             var bestDist = Float.MAX_VALUE
                             for (r in 0 until dots) {
                                 for (c in 0 until dots) {
-                                    val dx = originX + c * step - tapOffset.x
-                                    val dy = originY + r * step - tapOffset.y
+                                    val dx = originX + c * step - down.position.x
+                                    val dy = originY + r * step - down.position.y
                                     val dist = hypot(dx, dy)
                                     if (dist <= hitRadius && dist < bestDist) {
                                         bestDist = dist
-                                        nearestDot = DotCoord(r, c)
+                                        startDot = DotCoord(r, c)
                                     }
                                 }
                             }
 
-                            val tapped = nearestDot ?: return@detectTapGestures
-                            val currentSelected = selectedDot
-                            if (currentSelected == null) {
-                                selectedDot = tapped
-                                onDotSelectedFeedback()
-                            } else if (currentSelected == tapped) {
-                                selectedDot = null
-                            } else {
-                                val candidateLine = LineId.fromDots(currentSelected, tapped)
-                                if (candidateLine != null) {
-                                    if (!DotsAndBoxesEngine.isLineDrawn(state, candidateLine)) {
-                                        selectedDot = null
-                                        onLineCommitted(candidateLine)
-                                    } else {
-                                        onInvalidTapFeedback()
-                                        selectedDot = null
+                            val anchorDot = startDot ?: return@awaitEachGesture
+                            dragStartDot = anchorDot
+                            dragTargetDot = null
+                            dragCurrentOffset = down.position
+                            onDotSelectedFeedback()
+
+                            val anchorPos = dotCenter(anchorDot)
+                            var attemptedDrawnLine: LineId? = null
+                            var cancelled = false
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: event.changes.firstOrNull()
+                                if (change == null) {
+                                    cancelled = true
+                                    break
+                                }
+                                if (!change.pressed) {
+                                    change.consume()
+                                    break
+                                }
+                                change.consume()
+
+                                val pos = change.position
+                                dragCurrentOffset = pos
+
+                                val dx = pos.x - anchorPos.x
+                                val dy = pos.y - anchorPos.y
+                                val distFromAnchor = hypot(dx, dy)
+
+                                // Determine orthogonal neighbor target when dragged sufficiently from start dot
+                                var candidateTarget: DotCoord? = null
+                                val minDragThreshold = step * 0.36f
+                                if (distFromAnchor >= minDragThreshold) {
+                                    val absX = kotlin.math.abs(dx)
+                                    val absY = kotlin.math.abs(dy)
+                                    val candidate = when {
+                                        absX >= absY * 1.25f && dx > 0f -> DotCoord(anchorDot.row, anchorDot.col + 1)
+                                        absX >= absY * 1.25f && dx < 0f -> DotCoord(anchorDot.row, anchorDot.col - 1)
+                                        absY >= absX * 1.25f && dy > 0f -> DotCoord(anchorDot.row + 1, anchorDot.col)
+                                        absY >= absX * 1.25f && dy < 0f -> DotCoord(anchorDot.row - 1, anchorDot.col)
+                                        else -> {
+                                            // Fallback: direct proximity to any orthogonal neighbor
+                                            listOf(
+                                                DotCoord(anchorDot.row - 1, anchorDot.col),
+                                                DotCoord(anchorDot.row + 1, anchorDot.col),
+                                                DotCoord(anchorDot.row, anchorDot.col - 1),
+                                                DotCoord(anchorDot.row, anchorDot.col + 1),
+                                            ).filter { n ->
+                                                n.row in 0 until dots && n.col in 0 until dots
+                                            }.minByOrNull { n ->
+                                                val nc = dotCenter(n)
+                                                hypot(nc.x - pos.x, nc.y - pos.y)
+                                            }?.takeIf { n ->
+                                                val nc = dotCenter(n)
+                                                hypot(nc.x - pos.x, nc.y - pos.y) <= hitRadius
+                                            }
+                                        }
+                                    }
+
+                                    if (candidate != null && candidate.row in 0 until dots && candidate.col in 0 until dots) {
+                                        val line = LineId.fromDots(anchorDot, candidate)
+                                        if (line != null && !DotsAndBoxesEngine.isLineDrawn(latestState, line)) {
+                                            candidateTarget = candidate
+                                            attemptedDrawnLine = null
+                                        } else {
+                                            attemptedDrawnLine = line
+                                        }
                                     }
                                 } else {
-                                    // Switch selection to newly tapped dot
-                                    selectedDot = tapped
-                                    onDotSelectedFeedback()
+                                    attemptedDrawnLine = null
                                 }
+
+                                dragTargetDot = candidateTarget
                             }
+
+                            val finalTarget = dragTargetDot
+                            if (!cancelled && finalTarget != null) {
+                                val line = LineId.fromDots(anchorDot, finalTarget)
+                                if (line != null && !DotsAndBoxesEngine.isLineDrawn(latestState, line)) {
+                                    onLineCommitted(line)
+                                } else {
+                                    onInvalidTapFeedback()
+                                }
+                            } else if (!cancelled && attemptedDrawnLine != null) {
+                                onInvalidTapFeedback()
+                            }
+
+                            dragStartDot = null
+                            dragTargetDot = null
+                            dragCurrentOffset = null
                         }
                     },
             ) {
@@ -426,8 +506,10 @@ fun DotsAndBoxesBoard(
                     }
                 }
 
-                // 4. Candidate neighbor highlight when a dot is selected
-                val sel = selectedDot
+                // 4. Candidate neighbor hints & live drag preview line
+                val sel = dragStartDot
+                val snapTarget = dragTargetDot
+                val curOffset = dragCurrentOffset
                 if (sel != null && isMyTurn && gameState.phase == GamePhase.IN_PROGRESS) {
                     val neighbors = listOf(
                         DotCoord(sel.row - 1, sel.col),
@@ -443,18 +525,49 @@ fun DotsAndBoxesBoard(
                     for (n in neighbors) {
                         val nCenter = dotPos(n.row, n.col)
                         drawLine(
-                            color = activeColor.copy(alpha = 0.35f),
+                            color = activeColor.copy(alpha = 0.28f),
                             start = selCenter,
                             end = nCenter,
-                            strokeWidth = lineStroke * 0.7f,
+                            strokeWidth = lineStroke * 0.6f,
                             cap = StrokeCap.Round,
                             pathEffect = dashEffect,
                         )
                         drawCircle(
                             color = activeColor.copy(alpha = 0.35f),
-                            radius = dotRadius * 1.9f * pulseProgress,
+                            radius = dotRadius * 1.85f * pulseProgress,
                             center = nCenter,
                             style = Stroke(width = 2.5f),
+                        )
+                    }
+
+                    if (snapTarget != null) {
+                        val targetCenter = dotPos(snapTarget.row, snapTarget.col)
+                        drawLine(
+                            color = activeColor.copy(alpha = 0.38f),
+                            start = selCenter,
+                            end = targetCenter,
+                            strokeWidth = lineStroke * 1.9f,
+                            cap = StrokeCap.Round,
+                        )
+                        drawLine(
+                            color = activeColor,
+                            start = selCenter,
+                            end = targetCenter,
+                            strokeWidth = lineStroke,
+                            cap = StrokeCap.Round,
+                        )
+                        drawCircle(
+                            color = activeColor,
+                            radius = dotRadius * 1.45f,
+                            center = targetCenter,
+                        )
+                    } else if (curOffset != null) {
+                        drawLine(
+                            color = activeColor.copy(alpha = 0.72f),
+                            start = selCenter,
+                            end = curOffset,
+                            strokeWidth = lineStroke * 0.85f,
+                            cap = StrokeCap.Round,
                         )
                     }
                 }
@@ -463,7 +576,8 @@ fun DotsAndBoxesBoard(
                 for (r in 0 until dots) {
                     for (c in 0 until dots) {
                         val center = dotPos(r, c)
-                        val isSelected = sel?.row == r && sel.col == c
+                        val isSelected = (sel?.row == r && sel.col == c) ||
+                            (snapTarget?.row == r && snapTarget.col == c)
                         if (isSelected) {
                             drawCircle(
                                 color = activeColor.copy(alpha = 0.35f),

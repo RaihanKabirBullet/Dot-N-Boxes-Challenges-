@@ -18,7 +18,9 @@ import com.example.model.PlayerInfo
 import com.example.network.ClientConnectionStatus
 import com.example.network.ClientEvent
 import com.example.network.ClientSessionSnapshot
+import com.example.network.DiscoveredRoom
 import com.example.network.HostRoomSnapshot
+import com.example.network.IpAddressProvider
 import com.example.network.NetworkProtocol
 import com.example.network.TcpClientSession
 import com.example.network.TcpHostServer
@@ -47,8 +49,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
     val feedbackManager = FeedbackManager(application)
 
-    private val hostServer = TcpHostServer()
-    private val clientSession = TcpClientSession()
+    private val hostServer = TcpHostServer(application)
+    private val clientSession = TcpClientSession(application)
 
     val settings: StateFlow<UserSettings> = settingsRepository.settingsFlow
         .stateIn(
@@ -59,6 +61,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     val hostSnapshot: StateFlow<HostRoomSnapshot> = hostServer.snapshot
     val clientSnapshot: StateFlow<ClientSessionSnapshot> = clientSession.snapshot
+    val discoveredRooms: StateFlow<List<DiscoveredRoom>> = clientSession.discoveredRooms
+
+    private val _detectedWifiGatewayIp = MutableStateFlow<String?>(null)
+    val detectedWifiGatewayIp: StateFlow<String?> = _detectedWifiGatewayIp.asStateFlow()
 
     private val _activeMode = MutableStateFlow(GameMode.PRACTICE_AI)
     val activeMode: StateFlow<GameMode> = _activeMode.asStateFlow()
@@ -123,6 +129,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             clientSession.events.collect { event ->
                 when (event) {
                     ClientEvent.JoinedLobby -> {
+                        clientSession.stopDiscovery()
                         _activeMode.value = GameMode.CLIENT_MULTIPLAYER
                         _navEvents.tryEmit(UiNavEvent.NavigateToLobby)
                     }
@@ -334,6 +341,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun startRoomDiscovery() {
+        val gateway = IpAddressProvider.detectWifiGatewayIp(getApplication())
+        _detectedWifiGatewayIp.value = gateway
+        val lastIp = settings.value.lastHostIp
+        clientSession.startDiscovery(
+            extraTargetIps = listOfNotNull(gateway, lastIp.takeIf { it.isNotBlank() }),
+        )
+    }
+
+    fun stopRoomDiscovery() {
+        clientSession.stopDiscovery()
     }
 
     fun connectToHost(hostIp: String, portText: String) {
@@ -576,6 +596,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         aiTurnJob?.cancel()
         _practiceGameState.value = null
         _onBoardGameState.value = null
+        clientSession.stopDiscovery()
         viewModelScope.launch {
             hostServer.stopServer()
             clientSession.disconnect()

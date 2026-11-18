@@ -76,6 +76,8 @@ fun DotsAndBoxesApp(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val hostSnapshot by viewModel.hostSnapshot.collectAsStateWithLifecycle()
     val clientSnapshot by viewModel.clientSnapshot.collectAsStateWithLifecycle()
+    val discoveredRooms by viewModel.discoveredRooms.collectAsStateWithLifecycle()
+    val detectedWifiGatewayIp by viewModel.detectedWifiGatewayIp.collectAsStateWithLifecycle()
     val activeMode by viewModel.activeMode.collectAsStateWithLifecycle()
     val practiceBoardSize by viewModel.practiceBoardSize.collectAsStateWithLifecycle()
     val practiceAiCount by viewModel.practiceAiCount.collectAsStateWithLifecycle()
@@ -92,17 +94,20 @@ fun DotsAndBoxesApp(
                 UiNavEvent.NavigateToLobby -> {
                     navController.navigate(NavRoutes.LOBBY) {
                         popUpTo(NavRoutes.HOME)
+                        launchSingleTop = true
                     }
                 }
                 UiNavEvent.NavigateToGame -> {
                     navController.navigate(NavRoutes.GAME) {
                         popUpTo(NavRoutes.HOME)
+                        launchSingleTop = true
                     }
                 }
                 UiNavEvent.NavigateToResults -> {
                     if (navController.currentDestination?.route != NavRoutes.RESULTS) {
                         navController.navigate(NavRoutes.RESULTS) {
                             popUpTo(NavRoutes.GAME) { inclusive = true }
+                            launchSingleTop = true
                         }
                     }
                 }
@@ -217,6 +222,10 @@ fun DotsAndBoxesApp(
                         clientSnapshot = clientSnapshot,
                         initialNickname = settings.nickname,
                         lastHostIp = settings.lastHostIp,
+                        detectedGatewayIp = detectedWifiGatewayIp,
+                        discoveredRooms = discoveredRooms,
+                        onStartDiscovery = viewModel::startRoomDiscovery,
+                        onStopDiscovery = viewModel::stopRoomDiscovery,
                         onNicknameChange = viewModel::updateNickname,
                         onConnect = viewModel::connectToHost,
                         onBack = {

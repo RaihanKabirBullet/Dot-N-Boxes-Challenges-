@@ -75,7 +75,7 @@ fun HowToPlayScreen(
                         icon = Icons.Rounded.TouchApp,
                         accent = AccentCyan,
                         title = "1. Connect Two Adjacent Dots",
-                        body = "On your turn, tap a dot to select it, then tap an adjacent horizontal or vertical dot to draw a line. Diagonal lines and duplicate lines are not allowed.",
+                        body = "On your turn, press a dot and drag to an adjacent horizontal or vertical dot to draw a line. Diagonal lines and duplicate lines are not allowed.",
                     )
                     RuleStepCard(
                         icon = Icons.Rounded.CheckBox,

@@ -367,4 +367,74 @@ class DotsAndBoxesEngineTest {
         assertEquals(listOf("p0", "p1"), state.winners.map { it.id })
         assertEquals(listOf(2, 2, 0, 0), state.rankedPlayers.map { it.score })
     }
+
+    @Test
+    fun `discovery announcement encodes and decodes host metadata with source ip`() {
+        val payload = NetworkProtocol.encodeDiscoveryAnnouncement(
+            hostId = "host_xyz",
+            hostName = "Raihan",
+            port = 45678,
+            boardSize = BoardSize.MEDIUM,
+            playerCount = 2,
+            maxPlayers = 4,
+        )
+        val decoded = NetworkProtocol.decodeDiscoveryAnnouncement(payload, "192.168.148.1")
+        assertNotNull(decoded)
+        assertEquals("host_xyz", decoded!!.hostId)
+        assertEquals("Raihan", decoded.hostName)
+        assertEquals("192.168.148.1", decoded.hostIp)
+        assertEquals(45678, decoded.port)
+        assertEquals(BoardSize.MEDIUM, decoded.boardSize)
+        assertEquals(2, decoded.playerCount)
+        assertEquals(4, decoded.maxPlayers)
+    }
+
+    @Test
+    fun `midgame reconnect emits MatchStarted so client transitions from lobby back to game`() = runBlocking {
+        val freePort = ServerSocket(0).use { it.localPort }
+        val host = TcpHostServer()
+        val client = TcpClientSession()
+        try {
+            assertTrue(
+                host.startServer(
+                    hostId = "host_1",
+                    hostName = "HostPlayer",
+                    initialBoardSize = BoardSize.TINY,
+                    port = freePort,
+                ).isSuccess,
+            )
+            client.connect("127.0.0.1", freePort, "client_1", "ClientPlayer")
+            repeat(30) {
+                if (client.snapshot.value.status == ClientConnectionStatus.CONNECTED_LOBBY) return@repeat
+                delay(50)
+            }
+            assertTrue(host.startMatch().isSuccess)
+            repeat(30) {
+                if (client.snapshot.value.status == ClientConnectionStatus.IN_GAME) return@repeat
+                delay(50)
+            }
+
+            // Simulate fresh client session reconnecting mid-game (after disconnect / app restart)
+            client.close()
+            val rejoiningClient = TcpClientSession()
+            try {
+                rejoiningClient.connect("127.0.0.1", freePort, "client_1", "ClientPlayer")
+                var backInGame = false
+                repeat(40) {
+                    if (rejoiningClient.snapshot.value.status == ClientConnectionStatus.IN_GAME &&
+                        rejoiningClient.snapshot.value.gameState != null
+                    ) {
+                        backInGame = true
+                        return@repeat
+                    }
+                    delay(50)
+                }
+                assertTrue("Rejoining client must transition straight to IN_GAME", backInGame)
+            } finally {
+                rejoiningClient.close()
+            }
+        } finally {
+            host.close()
+        }
+    }
 }

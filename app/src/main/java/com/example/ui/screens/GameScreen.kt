@@ -382,9 +382,9 @@ fun GameScreen(
                                 "${currentPlayer.name} (${currentPlayer.score}) • BONUS TURN!"
                             isOnBoardLocal && currentPlayer != null ->
                                 "${currentPlayer.name}'s Turn (${currentPlayer.score} pts)"
-                            gameState.bonusTurnAwarded && isMyTurn -> "BONUS TURN! Tap two adjacent dots"
+                            gameState.bonusTurnAwarded && isMyTurn -> "BONUS TURN! Drag from one dot to another"
                             gameState.bonusTurnAwarded -> "${currentPlayer?.name ?: "Player"} earned a BONUS TURN!"
-                            isMyTurn -> "Your Turn — Tap two adjacent dots"
+                            isMyTurn -> "Your Turn — Drag between two dots"
                             currentPlayer?.isAi == true -> "${currentPlayer.name} is thinking..."
                             else -> "${currentPlayer?.name ?: "Player"}'s Turn"
                         }

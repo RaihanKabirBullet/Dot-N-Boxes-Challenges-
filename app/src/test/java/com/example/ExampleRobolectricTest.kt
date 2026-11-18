@@ -2,20 +2,32 @@ package com.example
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.UserSettings
 import com.example.game.DotsAndBoxesEngine
+import com.example.game.MoveResult
+import com.example.model.BoardSize
 import com.example.model.GameMode
 import com.example.model.LineId
 import com.example.model.LineType
+import com.example.model.PlayerInfo
+import com.example.network.ClientSessionSnapshot
+import com.example.network.DiscoveredRoom
 import com.example.ui.GameViewModel
+import com.example.ui.components.DotsAndBoxesBoard
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.JoinRoomScreen
 import com.example.ui.screens.OnBoardSetupScreen
 import com.example.ui.screens.PlayMenuScreen
 import com.example.ui.screens.SplashScreen
@@ -174,5 +186,158 @@ class ExampleRobolectricTest {
             assertEquals(1, afterMove.currentTurnIndex)
             assertEquals(1, DotsAndBoxesEngine.availableLines(state).size - DotsAndBoxesEngine.availableLines(afterMove).size)
         }
+    }
+
+    @Test
+    fun `join room screen shows discovered nearby rooms and connects on tap`() {
+        val room = DiscoveredRoom(
+            hostId = "host_abc",
+            hostName = "Raihan",
+            hostIp = "192.168.183.74",
+            port = 45678,
+            boardSize = BoardSize.SMALL,
+            playerCount = 1,
+            maxPlayers = 4,
+        )
+        var connectedIp: String? = null
+        var connectedPort: String? = null
+
+        composeRule.setContent {
+            DotsAndBoxesTheme {
+                JoinRoomScreen(
+                    clientSnapshot = ClientSessionSnapshot(),
+                    initialNickname = "Friend",
+                    lastHostIp = "192.168.43.1",
+                    detectedGatewayIp = "192.168.183.74",
+                    discoveredRooms = listOf(room),
+                    onNicknameChange = {},
+                    onConnect = { ip, port ->
+                        connectedIp = ip
+                        connectedPort = port
+                    },
+                    onBack = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Nearby Rooms Found").assertIsDisplayed()
+        composeRule.onNodeWithText("Raihan's Room").assertIsDisplayed()
+        composeRule.onNodeWithTag("discovered_room_join_host_abc").performClick()
+        assertEquals("192.168.183.74", connectedIp)
+        assertEquals("45678", connectedPort)
+    }
+
+    @Test
+    fun `board draws horizontal and vertical lines on drag and ignores plain taps`() {
+        val initialState = DotsAndBoxesEngine.createInitialState(
+            boardSize = BoardSize.TINY,
+            players = listOf(
+                PlayerInfo(id = "p1", name = "Player 1", colorIndex = 0),
+                PlayerInfo(id = "p2", name = "Player 2", colorIndex = 1),
+            ),
+        )
+        // Pre-draw horizontal (1, 0) so we can also test dragging an already-drawn line
+        val preDrawnLine = LineId(LineType.HORIZONTAL, 1, 0)
+        val gameState = (DotsAndBoxesEngine.applyMove(initialState, "p1", preDrawnLine) as MoveResult.Success).newState
+
+        val committedLines = mutableListOf<LineId>()
+        var invalidFeedbackCount = 0
+
+        composeRule.setContent {
+            DotsAndBoxesTheme {
+                DotsAndBoxesBoard(
+                    gameState = gameState,
+                    localPlayerId = "p1",
+                    isMyTurn = true,
+                    onDotSelectedFeedback = {},
+                    onInvalidTapFeedback = { invalidFeedbackCount++ },
+                    onLineCommitted = { committedLines.add(it) },
+                    modifier = Modifier.size(320.dp),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        val dots = BoardSize.TINY.dots
+
+        fun dotCenter(w: Int, h: Int, row: Int, col: Int): Offset {
+            val canvasMin = minOf(w.toFloat(), h.toFloat())
+            val padding = (canvasMin * 0.085f).coerceIn(22f, 52f)
+            val gridSpan = (canvasMin - padding * 2f).coerceAtLeast(1f)
+            val step = gridSpan / (dots - 1).coerceAtLeast(1)
+            val originX = (w - gridSpan) / 2f
+            val originY = (h - gridSpan) / 2f
+            return Offset(originX + col * step, originY + row * step)
+        }
+
+        // 1. Plain taps on two adjacent dots must NOT draw a line
+        composeRule.onNodeWithTag("game_board_canvas").performTouchInput {
+            val d00 = dotCenter(width, height, 0, 0)
+            val d01 = dotCenter(width, height, 0, 1)
+            down(d00)
+            advanceEventTime(16L)
+            up()
+            advanceEventTime(40L)
+            down(d01)
+            advanceEventTime(16L)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertTrue("Tapping dots without dragging must not draw a line", committedLines.isEmpty())
+
+        // 2. Drag from (0, 0) to (0, 1) commits HORIZONTAL(0, 0)
+        composeRule.onNodeWithTag("game_board_canvas").performTouchInput {
+            val start = dotCenter(width, height, 0, 0)
+            val end = dotCenter(width, height, 0, 1)
+            val mid = Offset((start.x + end.x) / 2f, (start.y + end.y) / 2f)
+            down(start)
+            advanceEventTime(16L)
+            moveTo(mid)
+            advanceEventTime(16L)
+            moveTo(end)
+            advanceEventTime(16L)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals(listOf(LineId(LineType.HORIZONTAL, 0, 0)), committedLines)
+
+        // 3. Drag from (0, 0) to (1, 0) commits VERTICAL(0, 0)
+        composeRule.onNodeWithTag("game_board_canvas").performTouchInput {
+            val start = dotCenter(width, height, 0, 0)
+            val end = dotCenter(width, height, 1, 0)
+            val mid = Offset((start.x + end.x) / 2f, (start.y + end.y) / 2f)
+            down(start)
+            advanceEventTime(16L)
+            moveTo(mid)
+            advanceEventTime(16L)
+            moveTo(end)
+            advanceEventTime(16L)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals(
+            listOf(
+                LineId(LineType.HORIZONTAL, 0, 0),
+                LineId(LineType.VERTICAL, 0, 0),
+            ),
+            committedLines,
+        )
+
+        // 4. Dragging along an already-drawn line triggers invalid feedback and does not commit
+        composeRule.onNodeWithTag("game_board_canvas").performTouchInput {
+            val start = dotCenter(width, height, 1, 0)
+            val end = dotCenter(width, height, 1, 1)
+            val mid = Offset((start.x + end.x) / 2f, (start.y + end.y) / 2f)
+            down(start)
+            advanceEventTime(16L)
+            moveTo(mid)
+            advanceEventTime(16L)
+            moveTo(end)
+            advanceEventTime(16L)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals(2, committedLines.size)
+        assertEquals(1, invalidFeedbackCount)
     }
 }

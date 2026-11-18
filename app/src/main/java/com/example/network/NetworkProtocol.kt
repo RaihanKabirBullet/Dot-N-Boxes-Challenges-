@@ -58,9 +58,22 @@ sealed interface ProtocolMessage {
     ) : ProtocolMessage
 }
 
+data class DiscoveredRoom(
+    val hostId: String,
+    val hostName: String,
+    val hostIp: String,
+    val port: Int,
+    val boardSize: BoardSize,
+    val playerCount: Int,
+    val maxPlayers: Int,
+    val lastSeenMs: Long = System.currentTimeMillis(),
+)
+
 object NetworkProtocol {
 
     const val DEFAULT_PORT = 45678
+    const val DISCOVERY_PORT = 45679
+    const val DISCOVERY_QUERY = "DOTNBOX_DISCOVER_V1"
 
     fun encode(message: ProtocolMessage): String {
         val buffer = Buffer()
@@ -393,6 +406,68 @@ object NetworkProtocol {
         }
         reader.endArray()
         return list
+    }
+
+    fun encodeDiscoveryAnnouncement(
+        hostId: String,
+        hostName: String,
+        port: Int,
+        boardSize: BoardSize,
+        playerCount: Int,
+        maxPlayers: Int,
+    ): String {
+        val buffer = Buffer()
+        val writer = JsonWriter.of(buffer)
+        writer.beginObject()
+        writer.name("type").value("ROOM_ANNOUNCE")
+        writer.name("hostId").value(hostId)
+        writer.name("hostName").value(hostName)
+        writer.name("port").value(port)
+        writer.name("boardSize").value(boardSize.name)
+        writer.name("playerCount").value(playerCount)
+        writer.name("maxPlayers").value(maxPlayers)
+        writer.endObject()
+        writer.flush()
+        return buffer.readUtf8()
+    }
+
+    fun decodeDiscoveryAnnouncement(raw: String, sourceIp: String): DiscoveredRoom? {
+        if (raw.isBlank()) return null
+        return runCatching {
+            val buffer = Buffer().writeUtf8(raw.trim())
+            val reader = JsonReader.of(buffer)
+            reader.beginObject()
+            var type: String? = null
+            var hostId: String? = null
+            var hostName = "Host"
+            var port = DEFAULT_PORT
+            var boardSize = BoardSize.SMALL
+            var playerCount = 1
+            var maxPlayers = 4
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "type" -> type = reader.nextStringOrNull()
+                    "hostId" -> hostId = reader.nextStringOrNull()
+                    "hostName" -> hostName = reader.nextStringOrNull() ?: "Host"
+                    "port" -> port = reader.nextInt()
+                    "boardSize" -> boardSize = BoardSize.fromNameOrDefault(reader.nextStringOrNull())
+                    "playerCount" -> playerCount = reader.nextInt()
+                    "maxPlayers" -> maxPlayers = reader.nextInt()
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+            if (type != "ROOM_ANNOUNCE" || hostId.isNullOrBlank()) return@runCatching null
+            DiscoveredRoom(
+                hostId = hostId,
+                hostName = hostName,
+                hostIp = sourceIp,
+                port = port,
+                boardSize = boardSize,
+                playerCount = playerCount,
+                maxPlayers = maxPlayers,
+            )
+        }.getOrNull()
     }
 
     private fun JsonReader.nextStringOrNull(): String? {

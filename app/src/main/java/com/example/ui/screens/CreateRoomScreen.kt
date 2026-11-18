@@ -32,11 +32,15 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,7 +65,9 @@ import com.example.ui.theme.SuccessEmerald
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.WarningAmber
+import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CreateRoomScreen(
     hostSnapshot: HostRoomSnapshot,
@@ -82,9 +88,19 @@ fun CreateRoomScreen(
         } else {
             onRefreshIp()
         }
+        while (true) {
+            delay(2000L)
+            onRefreshIp()
+        }
     }
 
-    var nickname by remember(initialNickname) { mutableStateOf(initialNickname) }
+    var nickname by rememberSaveable { mutableStateOf(initialNickname) }
+    var userEditedNickname by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(initialNickname) {
+        if (!userEditedNickname && initialNickname != nickname) {
+            nickname = initialNickname
+        }
+    }
     val clipboardManager = LocalClipboardManager.current
 
     NavyGradientBackdrop {
@@ -199,12 +215,38 @@ fun CreateRoomScreen(
                             )
 
                             if (hostSnapshot.alternateIps.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "Other local IPs: ${hostSnapshot.alternateIps.joinToString(", ")}",
+                                    text = "Other local IPs (tap to copy):",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = TextSecondary,
                                 )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    hostSnapshot.alternateIps.forEach { altIp ->
+                                        Surface(
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(altIp))
+                                                onCopiedIp()
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = NavyCardElevated,
+                                            border = BorderStroke(1.dp, NavyOutline),
+                                        ) {
+                                            Text(
+                                                text = altIp,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = JetBrainsMonoFontFamily,
+                                                ),
+                                                color = AccentCyan,
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -256,8 +298,11 @@ fun CreateRoomScreen(
                                 value = nickname,
                                 onValueChange = {
                                     if (it.length <= 18) {
+                                        userEditedNickname = true
                                         nickname = it
-                                        onNicknameChange(it)
+                                        if (it.isNotBlank()) {
+                                            onNicknameChange(it)
+                                        }
                                     }
                                 },
                                 singleLine = true,

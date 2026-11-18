@@ -1,5 +1,7 @@
 package com.example.network
 
+import android.content.Context
+import android.net.wifi.WifiManager
 import com.example.game.DotsAndBoxesEngine
 import com.example.game.MoveResult
 import com.example.model.BoardSize
@@ -24,6 +26,9 @@ import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -40,7 +45,9 @@ data class HostRoomSnapshot(
     val lastError: String? = null,
 )
 
-class TcpHostServer {
+class TcpHostServer(
+    private val appContext: Context? = null,
+) {
 
     companion object {
         const val MAX_PLAYERS = 4
@@ -52,8 +59,11 @@ class TcpHostServer {
     private val stateMutex = Mutex()
 
     private var serverSocket: ServerSocket? = null
+    private var discoverySocket: DatagramSocket? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
     private var acceptJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var discoveryJob: Job? = null
 
     private val clientSessions = ConcurrentHashMap<String, ClientHandler>()
 
@@ -113,6 +123,9 @@ class TcpHostServer {
 
             acceptJob = scope.launch { acceptLoop(ss) }
             heartbeatJob = scope.launch { heartbeatLoop() }
+            if (port == NetworkProtocol.DEFAULT_PORT) {
+                discoveryJob = scope.launch { runDiscoveryResponder() }
+            }
         }.onFailure { err ->
             _snapshot.value = _snapshot.value.copy(
                 isRunning = false,
@@ -237,6 +250,9 @@ class TcpHostServer {
 
     fun close() {
         runCatching {
+            discoveryJob?.cancel()
+            discoverySocket?.close()
+            multicastLock?.let { if (it.isHeld) it.release() }
             serverSocket?.close()
             clientSessions.values.forEach { it.closeQuietly() }
             clientSessions.clear()
@@ -247,8 +263,14 @@ class TcpHostServer {
     private fun stopServerInternal() {
         acceptJob?.cancel()
         heartbeatJob?.cancel()
+        discoveryJob?.cancel()
         acceptJob = null
         heartbeatJob = null
+        discoveryJob = null
+        runCatching { discoverySocket?.close() }
+        discoverySocket = null
+        runCatching { multicastLock?.let { if (it.isHeld) it.release() } }
+        multicastLock = null
         val handlers = clientSessions.values.toList()
         clientSessions.clear()
         handlers.forEach { handler ->
@@ -264,6 +286,73 @@ class TcpHostServer {
         runCatching { serverSocket?.close() }
         serverSocket = null
         _snapshot.value = HostRoomSnapshot()
+    }
+
+    private suspend fun runDiscoveryResponder() {
+        runCatching {
+            val wifiMgr = appContext?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            multicastLock = runCatching {
+                wifiMgr?.createMulticastLock("dotnbox_host_discovery")?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }.getOrNull()
+
+            val udp = DatagramSocket(null).apply {
+                reuseAddress = true
+                broadcast = true
+                soTimeout = 1500
+                bind(InetSocketAddress(NetworkProtocol.DISCOVERY_PORT))
+            }
+            discoverySocket = udp
+
+            val buffer = ByteArray(1024)
+            while (scope.isActive && !udp.isClosed) {
+                val snap = _snapshot.value
+                if (!snap.isRunning) break
+
+                val packet = DatagramPacket(buffer, buffer.size)
+                val received = try {
+                    udp.receive(packet)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+
+                if (received) {
+                    val query = String(packet.data, 0, packet.length, Charsets.UTF_8).trim()
+                    if (query == NetworkProtocol.DISCOVERY_QUERY && snap.gameState == null) {
+                        val payload = buildDiscoveryPayload(snap)
+                        val reply = DatagramPacket(payload, payload.size, packet.address, packet.port)
+                        runCatching { udp.send(reply) }
+                    }
+                } else if (snap.gameState == null && snap.players.size < MAX_PLAYERS) {
+                    // Periodic broadcast beacon so nearby clients discover the room automatically
+                    val payload = buildDiscoveryPayload(snap)
+                    for (bcast in IpAddressProvider.detectBroadcastAddresses()) {
+                        runCatching {
+                            val addr = InetAddress.getByName(bcast)
+                            udp.send(DatagramPacket(payload, payload.size, addr, NetworkProtocol.DISCOVERY_PORT))
+                        }
+                    }
+                }
+            }
+        }
+        runCatching { discoverySocket?.close() }
+        discoverySocket = null
+    }
+
+    private fun buildDiscoveryPayload(snap: HostRoomSnapshot): ByteArray {
+        val hostPlayer = snap.players.firstOrNull { it.isHost }
+        val json = NetworkProtocol.encodeDiscoveryAnnouncement(
+            hostId = hostPlayer?.id ?: "host",
+            hostName = hostPlayer?.name ?: "Host",
+            port = snap.port,
+            boardSize = snap.boardSize,
+            playerCount = snap.players.count { it.isConnected },
+            maxPlayers = MAX_PLAYERS,
+        )
+        return json.toByteArray(Charsets.UTF_8)
     }
 
     private suspend fun acceptLoop(ss: ServerSocket) {
